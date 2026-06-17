@@ -1,0 +1,78 @@
+function doGet(e) { 
+  Logger.log(JSON.stringify(e));
+  var result = 'Ok';
+  if (e.parameter == 'undefined') {
+    result = 'No Parameters';
+  }
+  else {
+    var sheet_id = '1aRYHTcs2Q60PRAzGKSkQpD1-KUWFcLjGfQ7WTBvVK7o'; 	// Spreadsheet ID.
+    var sheet_name = "data";  // Sheet Name in Google Sheets.
+
+    var sheet_open = SpreadsheetApp.openById(sheet_id);
+    var sheet_target = sheet_open.getSheetByName(sheet_name);
+
+    var newRow = sheet_target.getLastRow();
+
+    var rowDataLog = [];
+
+    var Curr_Date = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", 'dd/MM/yyyy');
+    rowDataLog[0] = Curr_Date;  // Date will be written in column A (in the "DHT11 Sensor Data Logger" section).
+
+    var Curr_Time = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", 'HH:mm:ss');
+    rowDataLog[1] = Curr_Time;  // Time will be written in column B (in the "DHT11 Sensor Data Logger" section).
+
+    var sts_val = '';
+
+    for (var param in e.parameter) {
+      Logger.log('In for loop, param=' + param);
+      var value = stripQuotes(e.parameter[param]);
+      Logger.log(param + ':' + e.parameter[param]);
+      switch (param) {
+        case 'sts':
+          sts_val = value;
+          break;
+
+        case 'hanhdong':
+          rowDataLog[2] = value;  
+          result += ', Ghi hanh dong';
+          break;
+
+        case 'hinhthuc':
+          rowDataLog[3] = value; 
+          result += ', Ghi hinh thuc ';
+          break;  
+        case 'ghichu':
+          rowDataLog[4] = value;
+          result += ', Ghi ghi chu '; 
+          break;     
+        default:
+          result += ", unsupported parameter";
+      }
+    }
+    
+    // Conditions for writing data received from ESP32 to Google Sheets.
+    if (sts_val == 'write') {
+      // Writes data to the "DHT11 Sensor Data Logger" section.
+      Logger.log(JSON.stringify(rowDataLog));
+      // Insert a new row above the existing data.
+      sheet_target.insertRows(2);
+      var newRangeDataLog = sheet_target.getRange(2,1,1, rowDataLog.length);
+      newRangeDataLog.setValues([rowDataLog]);
+      maxRowData(100);
+      return ContentService.createTextOutput(result);
+    }
+    
+  }
+}
+function maxRowData(allRowsAfter) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet()
+                              .getSheetByName('data')
+  
+  sheet.getRange(allRowsAfter+1, 1, sheet.getLastRow()-allRowsAfter, sheet.getLastColumn())
+       .clearContent()
+
+}
+function stripQuotes( value ) {
+  return value.replace(/^["']|['"]$/g, "");
+}
+//________________

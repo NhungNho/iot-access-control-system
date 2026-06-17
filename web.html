@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Quản lý ra vào</title>
+    <!-- MQTT -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+   <style>
+
+body{
+    font-family: Arial;
+    background: #f2f2f2;
+    text-align: center;
+    margin-top: 50px;
+}
+
+.mainContainer{
+    width: 1100px;
+    margin: auto;
+    display: flex;
+    gap: 20px;
+}
+
+.leftPanel,
+.rightPanel{
+    flex: 1;
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 0 10px gray;
+}
+
+h1{
+    color: #333;
+}
+
+/* ===== BUTTON ===== */
+button{
+    width: 170px;
+    height: 45px;
+    margin: 10px;
+    font-size: 16px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    color: white;
+    transition: 0.25s;
+}
+
+.mqttBtn{ background: #007bff; }
+.mqttBtn:hover{ background: #4da3ff; }
+
+.openBtn{ background: green; }
+.openBtn:hover{ background: #33cc33; }
+
+.closeBtn{ background: red; }
+.closeBtn:hover{ background: #ff6666; }
+
+.deleteBtn{
+    width: 80px;
+    height: 35px;
+    background: red;
+}
+
+.deleteBtn:hover{
+    background: #ff6666;
+}
+
+/* ===== STATUS ===== */
+.statusText{
+    margin-top: 20px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #333;
+}
+
+.mqttStatus,
+.cardStatus{
+    margin-top: 15px;
+    font-size: 18px;
+    font-weight: bold;
+    color: blue;
+}
+
+/* ===== RFID ===== */
+#cardList{
+    margin-top: 20px;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.cardItem{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    background: #f5f5f5;
+    padding: 10px;
+    margin-top: 8px;
+
+    border-radius: 10px;
+}
+
+/* ===== SWITCH ===== */
+.switch{
+    position: relative;
+    display: inline-block;
+    width: 90px;
+    height: 45px;
+    margin-top: 25px;
+}
+
+.switch input{
+    display: none;
+}
+
+.slider{
+    position: absolute;
+    cursor: pointer;
+
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+
+    background: red;
+    border-radius: 45px;
+
+    transition: .4s;
+}
+
+.slider:before{
+    content: "";
+
+    position: absolute;
+
+    width: 35px;
+    height: 35px;
+
+    left: 5px;
+    bottom: 5px;
+
+    background: white;
+    border-radius: 50%;
+
+    transition: .4s;
+}
+
+input:checked + .slider{
+    background: green;
+}
+
+input:checked + .slider:before{
+    transform: translateX(45px);
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="mainContainer">
+
+    <!-- CỘT TRÁI -->
+    <div class="leftPanel">
+
+        <div class="container">
+
+            <h1>QUẢN LÝ RA VÀO</h1>
+
+            <button
+                class="mqttBtn"
+                id="mqttButton"
+                onclick="toggleMQTT()">
+
+                KẾT NỐI MQTT
+
+            </button>
+
+            <br>
+
+            <button
+                class="openBtn"
+                onclick="openDoor()">
+
+                MỞ CỬA
+
+            </button>
+
+            <button
+                class="closeBtn"
+                onclick="closeDoor()">
+
+                ĐÓNG CỬA
+
+            </button>
+
+            <br>
+
+            <label class="switch">
+                <input
+                    type="checkbox"
+                    id="doorSwitch"
+                    disabled>
+
+                <span class="slider"></span>
+            </label>
+
+            <div
+                class="statusText"
+                id="status">
+
+                Trạng thái cửa: ĐANG ĐÓNG
+
+            </div>
+
+            <div
+                class="mqttStatus"
+                id="mqttStatus">
+
+                MQTT: CHƯA KẾT NỐI
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- CỘT PHẢI -->
+    <div class="rightPanel">
+
+        <h1>QUẢN LÝ RFID</h1>
+
+        <button
+            class="mqttBtn"
+            onclick="addCardMode()">
+
+            THÊM THẺ
+
+        </button>
+
+        <div
+            id="cardStatus"
+            style="
+                margin-top:15px;
+                font-weight:bold;
+                color:blue;">
+
+            Sẵn sàng
+
+        </div>
+
+        <hr>
+
+        <h3>Danh sách thẻ</h3>
+
+        <div
+            id="cardList"
+            class="cardList">
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+let client;
+let cardList = [];
+let isConnected = false;
+
+// ===== TOGGLE MQTT =====
+function toggleMQTT(){
+    if(!isConnected){
+        connectMQTT();
+    }else{
+        disconnectMQTT();
+    }
+}
+
+// ===== CONNECT MQTT =====
+function connectMQTT(){
+
+    document.getElementById("mqttStatus").innerHTML =
+        "MQTT: ĐANG KẾT NỐI...";
+
+    client = mqtt.connect(
+        'wss://741a15d1156f4924b1122e00e2cf1d9d.s1.eu.hivemq.cloud:8884/mqtt',
+        {
+            username: 'cam_nhung',
+            password: '123456789Camnhung',
+            reconnectPeriod: 2000,
+            connectTimeout: 5000
+        }
+    );
+
+    client.on('connect', function () {
+
+        isConnected = true;
+
+        document.getElementById("mqttButton").innerHTML = "NGẮT KẾT NỐI";
+        document.getElementById("mqttButton").style.background = "#ff0000";
+        document.getElementById("mqttStatus").innerHTML = "MQTT: ĐÃ KẾT NỐI";
+
+        client.subscribe("esp32/door");
+
+        client.subscribe("esp32/card_added");
+        client.subscribe("esp32/card_deleted");
+        client.subscribe("esp32/card_list");
+
+        client.publish("esp32/get_state", "1");
+        client.publish("esp32/get_card_list", "1");
+
+    });
+
+   client.on('message', function (topic, message) {
+
+    let msgString = message.toString();
+
+    console.log("Topic:", topic);
+    console.log("Message:", msgString);
+
+    // ==========================
+    // TRẠNG THÁI CỬA
+    // ==========================
+    if(topic == "esp32/door"){
+
+        let hanhdong = "";
+
+        try{
+            let data = JSON.parse(msgString);
+            hanhdong = data.hanhdong;
+        }
+        catch(e){
+            hanhdong = msgString;
+        }
+
+        if(hanhdong === "Mo"){
+
+            document.getElementById("status").innerHTML =
+                "Trạng thái cửa: ĐANG MỞ";
+
+            document.getElementById(
+                "doorSwitch").checked = true;
+        }
+        else if(hanhdong === "Dong"){
+
+            document.getElementById("status").innerHTML =
+                "Trạng thái cửa: ĐANG ĐÓNG";
+
+            document.getElementById(
+                "doorSwitch").checked = false;
+        }
+    }
+
+    // ==========================
+    // NHẬN DANH SÁCH THẺ
+    // ==========================
+    if(topic == "esp32/card_list"){
+
+        try{
+
+            cardList =
+                JSON.parse(msgString);
+
+            renderCardList();
+
+        }
+        catch(e){
+
+            console.log(
+                "Loi JSON:",
+                e
+            );
+        }
+    }
+
+    // ==========================
+    // THÊM THẺ THÀNH CÔNG
+    // ==========================
+    if(topic == "esp32/card_added"){
+
+        document.getElementById(
+            "cardStatus"
+        ).innerHTML =
+            "Đã thêm thẻ: "
+            + msgString;
+
+        // yêu cầu cập nhật danh sách
+        client.publish(
+            "esp32/get_card_list",
+            "1"
+        );
+    }
+
+    // ==========================
+    // XÓA THẺ THÀNH CÔNG
+    // ==========================
+    if(topic == "esp32/card_deleted"){
+
+        document.getElementById(
+            "cardStatus"
+        ).innerHTML =
+            "Đã xóa thẻ: "
+            + msgString;
+
+        client.publish(
+            "esp32/get_card_list",
+            "1"
+        );
+    }
+
+});
+    client.on('close', function(){
+
+        isConnected = false;
+
+        document.getElementById("mqttButton").innerHTML =
+            "KẾT NỐI MQTT";
+        document.getElementById("mqttButton").style.background =
+            "#007bff";
+        document.getElementById("mqttStatus").innerHTML =
+            "MQTT: ĐÃ NGẮT";
+    });
+}
+
+// ===== DISCONNECT =====
+function disconnectMQTT(){
+    if(client){
+        client.end();
+    }
+}
+
+// ===== OPEN DOOR =====
+function openDoor(){
+    if(client && client.connected){
+        client.publish("esp32/client", "1");
+    }else{
+        alert("MQTT chưa kết nối!");
+    }
+}
+
+// ===== CLOSE DOOR =====
+function closeDoor(){
+    if(client && client.connected){
+        client.publish("esp32/client", "0");
+    }else{
+        alert("MQTT chưa kết nối!");
+    }
+}
+function renderCardList()
+{
+    let html = "";
+
+    for(let card of cardList)
+    {
+        html += `
+        <div class="cardItem">
+
+            <span>${card}</span>
+
+            <button
+                class="deleteBtn"
+                onclick="deleteCard('${card}')">
+
+                XÓA
+
+            </button>
+
+        </div>
+        `;
+    }
+
+    document.getElementById(
+        "cardList"
+    ).innerHTML = html;
+}
+function addCardMode(){
+
+    if(client && client.connected){
+
+        client.publish(
+            "esp32/add_mode",
+            "1"
+        );
+
+        document.getElementById(
+            "cardStatus"
+        ).innerHTML =
+            "Hãy quẹt thẻ mới...";
+    }
+    else{
+        alert("MQTT chưa kết nối!");
+    }
+}
+function deleteCard(uid){
+
+    if(confirm(
+        "Bạn có chắc muốn xóa thẻ "
+        + uid + " ?"))
+    {
+        client.publish(
+            "esp32/delete_card",
+            uid
+        );
+    }
+}
+window.onload = function () {
+    connectMQTT();
+};
+</script>
+
+</body>
+</html>
+
